@@ -13,9 +13,9 @@ train_feeder_args:
   align_st: True
   strong_aug_method: '12345'
   window_size: 64
-  random_shear: 0.
+  random_shear: 0.3
   resize_crop: True
-  p_interval: [0.99, 1]
+  p_interval: [0.5, 1]
   coordinate_transfer_type: 888
   normalization: -1
   vertical: True
