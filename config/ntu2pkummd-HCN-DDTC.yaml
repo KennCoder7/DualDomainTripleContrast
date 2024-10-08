@@ -1,5 +1,4 @@
 work_dir: /data/wangkun/project/work_dir/CrossDt/HCN-DDTC/ntu2pkummd_cs/exp
-#weights: /data/wangkun/project/work_dir/CrossDt/HCN-DDTC/ntu2pkummd_cs/1003-DANN/best_model.pt
 #phase: 'extract_feature'
 #phase: 'test'
 # feeder
@@ -40,7 +39,7 @@ test_feeder_args:
   preprocess: True
 
 # model
-model: net.HCN-UDA-DDTC-single.Model
+model: net.HCN-UDA-DDTC.Model
 model_args:
   encoder_args:
     in_channel: 3
