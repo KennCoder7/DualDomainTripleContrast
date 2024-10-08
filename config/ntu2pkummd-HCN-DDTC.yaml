@@ -1,0 +1,98 @@
+work_dir: /data/wangkun/project/work_dir/CrossDt/HCN-DDTC/ntu2pkummd_cs/exp
+#weights: /data/wangkun/project/work_dir/CrossDt/HCN-DDTC/ntu2pkummd_cs/1003-DANN/best_model.pt
+#phase: 'extract_feature'
+#phase: 'test'
+# feeder
+feeder: feeder.feeder_cd_uda.Feeder
+train_feeder_args:
+  data_path: /data/wangkun/project/datasets/NTU_dataset/ntu/ntu2pkummd/NTU60_N51.npz
+  dataset: 'ntu'
+  split: train
+  target_data_path: /data/wangkun/project/datasets/PKUMMD/pku_part1/N51_CS.npz
+#  target_data_path: /data/wangkun/project/datasets/PKUMMD/pku_part1/N51_CV.npz
+  target_dataset: 'pkummd'
+  align_st: True
+  strong_aug_method: '12345'
+  window_size: 64
+  random_shear: 0.
+  resize_crop: True
+  p_interval: [0.99, 1]
+  coordinate_transfer_type: 888
+  normalization: -1
+  vertical: True
+  fixed_direction: True
+  padding_none: True
+  get_pairs: True
+  preprocess: True
+test_feeder_args:
+  data_path: /data/wangkun/project/datasets/PKUMMD/pku_part1/N51_CS.npz
+#  data_path: /data/wangkun/project/datasets/PKUMMD/pku_part1/N51_CV.npz
+  dataset: 'pkummd'
+  split: test
+  window_size: 64
+  resize_crop: True
+  p_interval: [0.95]
+  coordinate_transfer_type: 888
+  normalization: -1
+  vertical: True
+  fixed_direction: True
+  padding_none: True
+  preprocess: True
+
+# model
+model: net.HCN-UDA-DDTC-single.Model
+model_args:
+  encoder_args:
+    in_channel: 3
+    num_joint: 25
+    num_person: 2
+    num_class: 51
+    out_channel: 128
+    window_size: 64
+    return_ft: True
+    max_person_logits: False
+  queue_size: 12800
+  queue_size_s: 5120
+  momentum: 0.999
+  Temperature: 0.07
+  Temperature_s: 0.07
+  Temperature_uda: 0.07
+  latent_dim: 256
+  topk: 1
+  topk_uda: 3
+  pretrained_path: /data/wangkun/project/work_dir/CrossDt/HCN/ntu2pkummd_cs/0906-exp-v7/best_model.pt
+#  pretrained_path: /data/wangkun/project/work_dir/CrossDt/HCN/ntu2pkummd_cs/0923-exp-Mmean/best_model.pt
+  context: True
+  lambda_val: 0.1
+  maskout: True
+
+weight_decay: 0.0001
+base_lr: 0.001
+optimizer: 'Adam'
+lr_decay_type: 'cosine'
+end_cosine_lr: 0.0001
+#lr_decay_type: 'step'
+#step: [25, 50]
+#step: [30]
+device: [0]
+batch_size: 128
+test_batch_size: 64
+num_epoch: 50
+seed: -1
+eval_interval: 5
+save_interval: 25
+bool_save_model: True
+bool_save_checkpoint: True
+nnm_epoch: 25
+nnm_uda_epoch: 25
+center_epoch: 10
+#pseudo_epoch: 50
+
+weight_loss_cls_source: 0.5
+weight_loss_ss_target: 0.5
+weight_loss_ss_ddm_target: 0.5
+weight_loss_ss_source: 0.5
+weight_loss_discriminator: 0.5
+weight_loss_uda: 0.5
+
+#weight_loss_ss_ddm_source: 0
