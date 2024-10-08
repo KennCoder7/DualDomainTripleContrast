@@ -172,8 +172,17 @@ class Model(nn.Module):
 
     def forward(self, xs, xs2=None, label_s=None, xt1=None, xt2=None, xte=None,
                 nnm=False, uda=False, center=False, nnm_uda=False):
+        N, C, T, V, M = xs.shape
+        _, emb_s_q, emb_sj_q, emb_sm_q = self.encoder_q(xs, return_jm=True)
+
+        cls_s = self.label_classifier(emb_s_q)
+        domain_s = self.domain_classifier(self.grl(emb_s_q))
+
+        if xt1 is None:
+            return cls_s, emb_s_q, domain_s
+        
         exit(1)
-        # the code will be available after the paper is accepted
+        # the training code will be available after the paper is accepted
 
         self._dequeue_and_enqueue_target(emb_t_k_mlp, emb_tj_k_mlp, emb_tm_k_mlp)
         self._dequeue_and_enqueue_source(emb_s_k_mlp, label_s, emb_sj_k_mlp, emb_sm_k_mlp)
