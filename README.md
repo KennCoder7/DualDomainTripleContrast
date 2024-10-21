@@ -1,5 +1,5 @@
 # DualDomainTripleContrast
-This is an official PyTorch implementation of "Dual-Domain Triple Contrast for Cross-Dataset Skeleton-based Action Recognition" which will be submitted to ...
+This is an official PyTorch implementation of "Dual-Domain Triple Contrast for Cross-Dataset Skeleton-based Action Recognition" which has be submitted to TOMM.
 
 ## Evaluation
 `python main.py recognition_ddtc --config  config/ntu2pkummd-HCN-DDTC.yaml --weights ../ntu2pku_cs.pt --phase test`   
