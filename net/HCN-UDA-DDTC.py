@@ -177,12 +177,197 @@ class Model(nn.Module):
 
         cls_s = self.label_classifier(emb_s_q)
         domain_s = self.domain_classifier(self.grl(emb_s_q))
+        # emb_s_q_mlp = F.normalize(self.fc_q(emb_s_q), dim=1)
 
         if xt1 is None:
             return cls_s, emb_s_q, domain_s
-        
-        exit(1)
-        # the training code will be available after the paper is accepted
+            # return cls_s, emb_s_q_mlp, domain_s
+
+        # print(xt1.shape, xt2.shape, xte.shape)
+        _, emb_t_q, emb_tj_q, emb_tm_q = self.encoder_q(xt1, return_jm=True)
+        emb_t_q_mlp = F.normalize(self.fc_q(emb_t_q), dim=1)
+        emb_tj_q_mlp = F.normalize(self.fc_j_q(emb_tj_q), dim=1)
+        emb_tm_q_mlp = F.normalize(self.fc_m_q(emb_tm_q), dim=1)
+
+        cls_t = self.label_classifier(emb_t_q)
+        domain_t = self.domain_classifier(self.grl(emb_t_q))
+
+        _, emb_te_q, emb_tej_q, emb_tem_q = self.encoder_q(xte, return_jm=True)
+        emb_te_q_mlp = F.normalize(self.fc_q(emb_te_q), dim=1)
+        emb_tej_q_mlp = F.normalize(self.fc_j_q(emb_tej_q), dim=1)
+        emb_tem_q_mlp = F.normalize(self.fc_m_q(emb_tem_q), dim=1)
+
+        emb_s_q_mlp = F.normalize(self.fc_q(emb_s_q), dim=1)
+        emb_sj_q_mlp = F.normalize(self.fc_j_q(emb_sj_q), dim=1)
+        emb_sm_q_mlp = F.normalize(self.fc_m_q(emb_sm_q), dim=1)
+
+        with torch.no_grad():
+            self._momentum_update_key_encoder()
+            _, emb_t_k, emb_tj_k, emb_tm_k = self.encoder_k(xt2, return_jm=True)
+            emb_t_k_mlp = F.normalize(self.fc_k(emb_t_k), dim=1)
+            emb_tj_k_mlp = F.normalize(self.fc_j_k(emb_tj_k), dim=1)
+            emb_tm_k_mlp = F.normalize(self.fc_m_k(emb_tm_k), dim=1)
+
+            _, emb_s_k, emb_sj_k, emb_sm_k = self.encoder_k(xs2, return_jm=True)
+            emb_s_k_mlp = F.normalize(self.fc_k(emb_s_k), dim=1)
+            emb_sj_k_mlp = F.normalize(self.fc_j_k(emb_sj_k), dim=1)
+            emb_sm_k_mlp = F.normalize(self.fc_m_k(emb_sm_k), dim=1)
+
+        l_pos_t = torch.einsum('nc,nc->n', [emb_t_q_mlp, emb_t_k_mlp]).unsqueeze(-1)
+        l_neg_t = torch.einsum('nc,ck->nk', [emb_t_q_mlp, self.queue_t.clone().detach()])
+        l_pos_tj = torch.einsum('nc,nc->n', [emb_tj_q_mlp, emb_tj_k_mlp]).unsqueeze(-1)
+        l_neg_tj = torch.einsum('nc,ck->nk', [emb_tj_q_mlp, self.queue_tj.clone().detach()])
+        l_pos_tm = torch.einsum('nc,nc->n', [emb_tm_q_mlp, emb_tm_k_mlp]).unsqueeze(-1)
+        l_neg_tm = torch.einsum('nc,ck->nk', [emb_tm_q_mlp, self.queue_tm.clone().detach()])
+
+        l_pos_te = torch.einsum('nc,nc->n', [emb_te_q_mlp, emb_t_k_mlp]).unsqueeze(-1)
+        l_neg_te = torch.einsum('nc,ck->nk', [emb_te_q_mlp, self.queue_t.clone().detach()])
+        l_pos_tej = torch.einsum('nc,nc->n', [emb_tej_q_mlp, emb_tj_k_mlp]).unsqueeze(-1)
+        l_neg_tej = torch.einsum('nc,ck->nk', [emb_tej_q_mlp, self.queue_tj.clone().detach()])
+        l_pos_tem = torch.einsum('nc,nc->n', [emb_tem_q_mlp, emb_tm_k_mlp]).unsqueeze(-1)
+        l_neg_tem = torch.einsum('nc,ck->nk', [emb_tem_q_mlp, self.queue_tm.clone().detach()])
+
+        l_pos_s = torch.einsum('nc,nc->n', [emb_s_q_mlp, emb_s_k_mlp]).unsqueeze(-1)
+        l_neg_s = torch.einsum('nc,ck->nk', [emb_s_q_mlp, self.queue_s.clone().detach()])
+        l_pos_sj = torch.einsum('nc,nc->n', [emb_sj_q_mlp, emb_sj_k_mlp]).unsqueeze(-1)
+        l_neg_sj = torch.einsum('nc,ck->nk', [emb_sj_q_mlp, self.queue_sj.clone().detach()])
+        l_pos_sm = torch.einsum('nc,nc->n', [emb_sm_q_mlp, emb_sm_k_mlp]).unsqueeze(-1)
+        l_neg_sm = torch.einsum('nc,ck->nk', [emb_sm_q_mlp, self.queue_sm.clone().detach()])
+        if self.maskout:
+            min_val = torch.min(l_neg_s)
+            l_neg_s = torch.where(
+                torch.eq(label_s.unsqueeze(-1), self.queue_s_label.clone().detach()),
+                min_val,  # 将正样本位置设为最小值
+                l_neg_s  # 其他位置保持原样
+            )
+            min_val = torch.min(l_neg_sj)
+            l_neg_sj = torch.where(
+                torch.eq(label_s.unsqueeze(-1), self.queue_s_label.clone().detach()),
+                min_val,  # 将正样本位置设为最小值
+                l_neg_sj  # 其他位置保持原样
+            )
+            min_val = torch.min(l_neg_sm)
+            l_neg_sm = torch.where(
+                torch.eq(label_s.unsqueeze(-1), self.queue_s_label.clone().detach()),
+                min_val,  # 将正样本位置设为最小值
+                l_neg_sm  # 其他位置保持原样
+            )
+        if center:
+            self.update_centers()
+            emb_s_k_mlp_center = ((1 - self.lambda_center) * emb_s_k_mlp + self.lambda_center * self.centers[label_s]) / 2.
+            emb_sj_k_mlp_center = ((1 - self.lambda_center) * emb_sj_k_mlp + self.lambda_center * self.centers_j[label_s]) / 2.
+            emb_sm_k_mlp_center = ((1 - self.lambda_center) * emb_sm_k_mlp + self.lambda_center * self.centers_m[label_s]) / 2.
+            l_pos_s_center = torch.einsum('nc,nc->n', [emb_s_q_mlp, emb_s_k_mlp_center]).unsqueeze(-1)
+            l_pos_sj_center = torch.einsum('nc,nc->n', [emb_sj_q_mlp, emb_sj_k_mlp_center]).unsqueeze(-1)
+            l_pos_sm_center = torch.einsum('nc,nc->n', [emb_sm_q_mlp, emb_sm_k_mlp_center]).unsqueeze(-1)
+            ss_s_logits = torch.cat([l_pos_s, l_pos_s_center, l_neg_s], dim=1) / self.Temperature_s
+            ss_sj_logits = torch.cat([l_pos_sj, l_pos_sj_center, l_neg_sj], dim=1) / self.Temperature_s
+            ss_sm_logits = torch.cat([l_pos_sm, l_pos_sm_center, l_neg_sm], dim=1) / self.Temperature_s
+            ss_label_s = torch.zeros_like(ss_s_logits)
+            ss_label_s[:, 0] = 1
+            ss_label_s[:, 1] = 1
+        else:
+            ss_s_logits = torch.cat([l_pos_s, l_neg_s], dim=1) / self.Temperature_s
+            ss_sj_logits = torch.cat([l_pos_sj, l_neg_sj], dim=1) / self.Temperature_s
+            ss_sm_logits = torch.cat([l_pos_sm, l_neg_sm], dim=1) / self.Temperature_s
+            ss_label_s = torch.zeros(N, dtype=torch.long).cuda()
+
+        if not nnm:
+            ss_t_logits = torch.cat([l_pos_t, l_neg_t], dim=1) / self.Temperature
+            ss_tj_logits = torch.cat([l_pos_tj, l_neg_tj], dim=1) / self.Temperature
+            ss_tm_logits = torch.cat([l_pos_tm, l_neg_tm], dim=1) / self.Temperature
+
+            ss_te_logits = torch.cat([l_pos_te, l_neg_te], dim=1) / self.Temperature
+            ss_te_logits = torch.softmax(ss_te_logits, dim=1)
+            ss_label_ddm = torch.softmax(ss_t_logits.clone().detach(), dim=1).detach()
+
+            ss_tej_logits = torch.cat([l_pos_tej, l_neg_tej], dim=1) / self.Temperature
+            ss_tej_logits = torch.softmax(ss_tej_logits, dim=1)
+            ss_label_ddm_j = torch.softmax(ss_tj_logits.clone().detach(), dim=1).detach()
+
+            ss_tem_logits = torch.cat([l_pos_tem, l_neg_tem], dim=1) / self.Temperature
+            ss_tem_logits = torch.softmax(ss_tem_logits, dim=1)
+            ss_label_ddm_m = torch.softmax(ss_tm_logits.clone().detach(), dim=1).detach()
+
+            ss_label_t = torch.zeros(N, dtype=torch.long).cuda()
+        else:
+            l_ens = (l_neg_t + l_neg_tj + l_neg_tm) / 3.
+            l_ens_e = (l_neg_te + l_neg_tej + l_neg_tem) / 3.
+            _, topkdix = torch.topk(l_ens, self.topk, dim=1)
+            _, topkdix_e = torch.topk(l_ens_e, self.topk, dim=1)
+            topk_onehot = torch.zeros_like(l_neg_t)
+            topk_onehot.scatter_(1, topkdix, 1)
+            topk_onehot.scatter_(1, topkdix_e, 1)
+            if self.context:
+                l_context = torch.einsum('nk,nk->nk', [l_neg_t, l_ens])
+                l_context_e = torch.einsum('nk,nk->nk', [l_neg_te, l_ens_e])
+                ss_t_logits = torch.cat([l_pos_t, l_neg_t, l_context], dim=1) / self.Temperature
+                ss_te_logits = torch.cat([l_pos_te, l_neg_te, l_context_e], dim=1) / self.Temperature
+                ss_te_logits = torch.softmax(ss_te_logits, dim=1)
+                ss_label_ddm = torch.softmax(ss_t_logits.clone().detach(), dim=1).detach()
+                l_context_j = torch.einsum('nk,nk->nk', [l_neg_tj, l_ens])
+                l_context_j_e = torch.einsum('nk,nk->nk', [l_neg_tej, l_ens_e])
+                ss_tj_logits = torch.cat([l_pos_tj, l_neg_tj, l_context_j], dim=1) / self.Temperature
+                ss_tej_logits = torch.cat([l_pos_tej, l_neg_tej, l_context_j_e], dim=1) / self.Temperature
+                ss_tej_logits = torch.softmax(ss_tej_logits, dim=1)
+                ss_label_ddm_j = torch.softmax(ss_tj_logits.clone().detach(), dim=1).detach()
+                l_context_m = torch.einsum('nk,nk->nk', [l_neg_tm, l_ens])
+                l_context_m_e = torch.einsum('nk,nk->nk', [l_neg_tem, l_ens_e])
+                ss_tm_logits = torch.cat([l_pos_tm, l_neg_tm, l_context_m], dim=1) / self.Temperature
+                ss_tem_logits = torch.cat([l_pos_tem, l_neg_tem, l_context_m_e], dim=1) / self.Temperature
+                ss_tem_logits = torch.softmax(ss_tem_logits, dim=1)
+                ss_label_ddm_m = torch.softmax(ss_tm_logits.clone().detach(), dim=1).detach()
+                ss_label_t = torch.cat([torch.ones(topk_onehot.size(0), 1).cuda(), topk_onehot, topk_onehot], dim=1)
+            else:
+                ss_t_logits = torch.cat([l_pos_t, l_neg_t], dim=1) / self.Temperature
+                ss_tj_logits = torch.cat([l_pos_tj, l_neg_tj], dim=1) / self.Temperature
+                ss_tm_logits = torch.cat([l_pos_tm, l_neg_tm], dim=1) / self.Temperature
+                ss_te_logits = torch.cat([l_pos_te, l_neg_te], dim=1) / self.Temperature
+                ss_te_logits = torch.softmax(ss_te_logits, dim=1)
+                ss_label_ddm = torch.softmax(ss_t_logits.clone().detach(), dim=1).detach()
+                ss_tej_logits = torch.cat([l_pos_tej, l_neg_tej], dim=1) / self.Temperature
+                ss_tej_logits = torch.softmax(ss_tej_logits, dim=1)
+                ss_label_ddm_j = torch.softmax(ss_tj_logits.clone().detach(), dim=1).detach()
+                ss_tem_logits = torch.cat([l_pos_tem, l_neg_tem], dim=1) / self.Temperature
+                ss_tem_logits = torch.softmax(ss_tem_logits, dim=1)
+                ss_label_ddm_m = torch.softmax(ss_tm_logits.clone().detach(), dim=1).detach()
+                ss_label_t = torch.cat([torch.ones(topk_onehot.size(0), 1).cuda(), topk_onehot], dim=1)
+
+        if uda:
+            l_t2s = torch.einsum('nc,ck->nk', [emb_t_q_mlp, self.queue_s.clone().detach()])
+            l_j_t2s = torch.einsum('nc,ck->nk', [emb_tj_q_mlp, self.queue_sj.clone().detach()])
+            l_m_t2s = torch.einsum('nc,ck->nk', [emb_tm_q_mlp, self.queue_sm.clone().detach()])
+            l_ens_t2s = (l_t2s + l_j_t2s + l_m_t2s) / 3.
+            _, topkdix = torch.topk(l_ens_t2s, self.topk_uda, dim=1)
+            if not nnm_uda or self.topk_uda == 1:
+                emb_t2s_k_mlp = self.queue_s.clone().detach()[:, topkdix[:, 0]].transpose(0, 1)
+                l_pos_t2s = torch.einsum('nc,nc->n', [emb_t_q_mlp, emb_t2s_k_mlp]).unsqueeze(-1)
+                ss_t2s_logits = torch.cat([l_pos_t2s, l_neg_t], dim=1) / self.Temperature_uda
+                emb_j_t2s_k_mlp = self.queue_sj.clone().detach()[:, topkdix[:, 0]].transpose(0, 1)
+                l_j_pos_t2s = torch.einsum('nc,nc->n', [emb_tj_q_mlp, emb_j_t2s_k_mlp]).unsqueeze(-1)
+                ss_j_t2s_logits = torch.cat([l_j_pos_t2s, l_neg_tj], dim=1) / self.Temperature_uda
+                emb_m_t2s_k_mlp = self.queue_sm.clone().detach()[:, topkdix[:, 0]].transpose(0, 1)
+                l_m_pos_t2s = torch.einsum('nc,nc->n', [emb_tm_q_mlp, emb_m_t2s_k_mlp]).unsqueeze(-1)
+                ss_m_t2s_logits = torch.cat([l_m_pos_t2s, l_neg_tm], dim=1) / self.Temperature_uda
+                ss_label_t2s = torch.zeros(N, dtype=torch.long).cuda()
+            else:
+                emb_t2s_k_mlp = self.queue_s.clone().detach()[:, topkdix[:, :]].transpose(0, 1)
+                l_pos_t2s = torch.einsum('nc,nck->nk', [emb_t_q_mlp, emb_t2s_k_mlp])
+                ss_t2s_logits = torch.cat([l_pos_t2s, l_neg_t], dim=1) / self.Temperature_uda
+                emb_j_t2s_k_mlp = self.queue_sj.clone().detach()[:, topkdix[:, :]].transpose(0, 1)
+                l_j_pos_t2s = torch.einsum('nc,nck->nk', [emb_tj_q_mlp, emb_j_t2s_k_mlp])
+                ss_j_t2s_logits = torch.cat([l_j_pos_t2s, l_neg_tj], dim=1) / self.Temperature_uda
+                emb_m_t2s_k_mlp = self.queue_sm.clone().detach()[:, topkdix[:, :]].transpose(0, 1)
+                l_m_pos_t2s = torch.einsum('nc,nck->nk', [emb_tm_q_mlp, emb_m_t2s_k_mlp])
+                ss_m_t2s_logits = torch.cat([l_m_pos_t2s, l_neg_tm], dim=1) / self.Temperature_uda
+                ss_label_t2s = torch.zeros_like(ss_t2s_logits)
+                ss_label_t2s[:, 0:self.topk_uda] = 1
+
+        else:
+            ss_t2s_logits = None
+            ss_j_t2s_logits = None
+            ss_m_t2s_logits = None
+            ss_label_t2s = None
 
         self._dequeue_and_enqueue_target(emb_t_k_mlp, emb_tj_k_mlp, emb_tm_k_mlp)
         self._dequeue_and_enqueue_source(emb_s_k_mlp, label_s, emb_sj_k_mlp, emb_sm_k_mlp)
